@@ -35,6 +35,16 @@ bclaude
 | `d` | Set as default |
 | `q` | Quit |
 
+### Add a workspace
+
+Press `a` in the menu, then type the full path to your project folder (e.g. `/Users/me/projects/my-app`). The folder must already exist.
+
+You can also add workspaces manually by appending a path to `~/.config/bclaude/workspaces` (one path per line):
+
+```sh
+echo "/path/to/project" >> ~/.config/bclaude/workspaces
+```
+
 ### Set default from CLI
 
 ```sh
