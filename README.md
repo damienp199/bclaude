@@ -1,4 +1,4 @@
-# Claude Boot
+# CLAUDE BOOT
 
 A minimal TUI workspace launcher for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 
