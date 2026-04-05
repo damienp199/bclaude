@@ -39,6 +39,9 @@ fi
 
 chmod +x "$INSTALL_PATH"
 
+# Créer l'alias court bcl → bclaude
+ln -sf "$INSTALL_PATH" "$INSTALL_DIR/bcl"
+
 # Vérifier que le PATH contient ~/.local/bin
 case ":$PATH:" in
   *":$INSTALL_DIR:"*) ;;
@@ -51,4 +54,4 @@ case ":$PATH:" in
     ;;
 esac
 
-printf "  ${GREEN}Done.${RST} Lance ${GREEN}bclaude${RST} pour commencer.\n\n"
+printf "  ${GREEN}Done.${RST} Lance ${GREEN}bclaude${RST} (ou ${GREEN}bcl${RST}) pour commencer.\n\n"
