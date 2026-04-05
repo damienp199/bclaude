@@ -2,7 +2,7 @@
 
 A minimal TUI workspace launcher for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 
-Switch between projects instantly. No config files to edit — everything happens from the menu.
+Save your most-used project folders and launch Claude Code in one keystroke — no more `cd`-ing around every time.
 
 ![screenshot](screenshot.png)
 
