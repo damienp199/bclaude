@@ -109,14 +109,101 @@ load_dirs() {
   [[ ${#DIRS[@]} -eq 1 && -z "${DIRS[1]}" ]] && DIRS=()
 }
 
-# --- Construire la liste complète (workspaces + quitter) ---
+MAX_RECENTS=5
+
+# --- Convertir un nom de dossier Claude en path réel ---
+# Claude encode les paths : / → -, espace → -, etc.
+# Ex: -Users-damienpugin-Documents-Apps-Auto-Accounting → /Users/damienpugin/Documents/Apps/Auto Accounting
+resolve_claude_path() {
+  local encoded="$1"
+  encoded="${encoded#-}"  # retirer le tiret initial
+  local parts=("${(@s/-/)encoded}")  # split sur -
+  local path=""
+  local i=1
+  while (( i <= ${#parts[@]} )); do
+    local candidate="$path/${parts[$i]}"
+    if [[ -d "$candidate" ]]; then
+      path="$candidate"
+      (( i++ ))
+    else
+      # Essayer de joindre avec les segments suivants (tiret ou espace dans le nom)
+      local found=false
+      local j=$(( i + 1 ))
+      while (( j <= ${#parts[@]} )); do
+        # Construire les variantes avec tiret et espace
+        local merged_dash="${parts[$i]}"
+        local merged_space="${parts[$i]}"
+        local k=$(( i + 1 ))
+        while (( k <= j )); do
+          merged_dash="$merged_dash-${parts[$k]}"
+          merged_space="$merged_space ${parts[$k]}"
+          (( k++ ))
+        done
+        if [[ -d "$path/$merged_dash" ]]; then
+          path="$path/$merged_dash"
+          i=$(( j + 1 ))
+          found=true
+          break
+        elif [[ -d "$path/$merged_space" ]]; then
+          path="$path/$merged_space"
+          i=$(( j + 1 ))
+          found=true
+          break
+        fi
+        (( j++ ))
+      done
+      if ! $found; then
+        echo ""
+        return
+      fi
+    fi
+  done
+  echo "$path"
+}
+
+# --- Charger les récents depuis ~/.claude/projects/ ---
+load_recents() {
+  RECENTS=()
+  local claude_projects="$HOME/.claude/projects"
+  [[ ! -d "$claude_projects" ]] && return
+
+  # Lister par date de modification décroissante
+  local entries=("${(@f)$(ls -t "$claude_projects" 2>/dev/null)}")
+
+  for entry in "${entries[@]}"; do
+    [[ -z "$entry" ]] && continue
+    local real_path=$(resolve_claude_path "$entry")
+    [[ -z "$real_path" || ! -d "$real_path" ]] && continue
+    # Ignorer le home directory (pas un vrai workspace)
+    [[ "$real_path" == "$HOME" ]] && continue
+    # Exclure ceux déjà dans les workspaces
+    local already=false
+    for d in "${DIRS[@]}"; do
+      [[ "$d" == "$real_path" ]] && { already=true; break; }
+    done
+    $already && continue
+    RECENTS+=("$real_path")
+    (( ${#RECENTS[@]} >= MAX_RECENTS )) && break
+  done
+}
+
+# --- Construire la liste complète (workspaces + récents) ---
 build_items() {
   load_dirs
+  load_recents
   ITEMS=()
   ITEMS_TYPE=()
+  ITEMS_FULL_PATH=()
   for d in "${DIRS[@]}"; do
     ITEMS+=("$(basename "$d")")
     ITEMS_TYPE+=(workspace)
+    ITEMS_FULL_PATH+=("$d")
+  done
+  RECENT_START_INDEX=$(( ${#ITEMS[@]} + 1 ))
+  for d in "${RECENTS[@]}"; do
+    ITEMS+=("$(basename "$d")")
+    ITEMS_TYPE+=(recent)
+    ITEMS_FULL_PATH+=("$d")
   done
 }
 
@@ -134,9 +221,16 @@ draw() {
   echo ""
 
   # Items
+  local shown_recent_header=false
   for i in {1..$total}; do
     local name="${ITEMS[$i]}"
     local is_default=false
+
+    # Afficher le header "Récents" avant le premier item recent
+    if [[ "${ITEMS_TYPE[$i]}" == "recent" ]] && ! $shown_recent_header; then
+      printf "\n  ${DIM}── récents ──${RST}\n"
+      shown_recent_header=true
+    fi
 
     # Le premier workspace est toujours le défaut
     if [[ "${ITEMS_TYPE[$i]}" == "workspace" && "$i" -eq 1 ]]; then
@@ -196,7 +290,7 @@ while true; do
       (( selected < ${#ITEMS[@]} )) && (( selected++ ))
       ;;
     enter)
-      target="${DIRS[$selected]}"
+      target="${ITEMS_FULL_PATH[$selected]}"
       if [[ ! -d "$target" ]]; then
         show_message "${RED}✗${RST} Dossier introuvable"
         continue
@@ -211,6 +305,15 @@ while true; do
       exec "${SHELL:-zsh}"
       ;;
     add)
+      # Si un récent est sélectionné, l'épingler directement
+      if [[ "${ITEMS_TYPE[$selected]}" == "recent" ]]; then
+        local pin_path="${ITEMS_FULL_PATH[$selected]}"
+        echo "$pin_path" >> "$WORKSPACES_FILE"
+        show_message "${GREEN}✓${RST} Épinglé ${DIM}$(basename "$pin_path")${RST}"
+        build_items
+        selected=1
+        continue
+      fi
       local new_path=$(prompt_input "Path :")
       new_path="${new_path## }"
       new_path="${new_path%% }"
@@ -236,7 +339,7 @@ while true; do
       fi
       if [[ "${ITEMS_TYPE[$selected]}" == "workspace" ]]; then
         local removed="${ITEMS[$selected]}"
-        local dir_to_remove="${DIRS[$selected]}"
+        local dir_to_remove="${ITEMS_FULL_PATH[$selected]}"
         local confirm=$(prompt_input "Supprimer ${BOLD}${removed}${RST} ? (o/N)")
         if [[ "$confirm" == "o" || "$confirm" == "O" ]]; then
           grep -vxF "$dir_to_remove" "$WORKSPACES_FILE" > "$WORKSPACES_FILE.tmp"
@@ -248,8 +351,8 @@ while true; do
       fi
       ;;
     def)
-      if [[ "${ITEMS_TYPE[$selected]}" == "workspace" ]]; then
-        local def_dir="${DIRS[$selected]}"
+      if [[ "${ITEMS_TYPE[$selected]}" == "workspace" || "${ITEMS_TYPE[$selected]}" == "recent" ]]; then
+        local def_dir="${ITEMS_FULL_PATH[$selected]}"
         grep -vxF "$def_dir" "$WORKSPACES_FILE" > "$WORKSPACES_FILE.tmp" 2>/dev/null
         { echo "$def_dir"; cat "$WORKSPACES_FILE.tmp"; } > "$WORKSPACES_FILE"
         rm -f "$WORKSPACES_FILE.tmp"
