@@ -12,8 +12,8 @@ if [[ ! -f "$WORKSPACES_FILE" ]]; then
   touch "$WORKSPACES_FILE"
 fi
 
-DEFAULT_FILE="$CONFIG_DIR/default"
-[[ -f "$DEFAULT_FILE" ]] && DEFAULT_CHOICE=$(cat "$DEFAULT_FILE") || DEFAULT_CHOICE=0
+# Le défaut est toujours la ligne 1 du fichier workspaces
+DEFAULT_CHOICE=1
 
 # --- Couleurs ---
 RST=$'\e[0m'
@@ -43,12 +43,32 @@ case "$1" in
     echo "  ✓ Défaut : $(basename "$target")"
     exit 0
     ;;
+  upgrade|--upgrade)
+    REPO="https://raw.githubusercontent.com/damienp199/bclaude/main/bclaude"
+    INSTALL_PATH="$HOME/.local/bin/bclaude"
+    if [[ -L "$INSTALL_PATH" ]]; then
+      echo "  ✗ Symlink détecté — utilise git pull dans ton repo local"
+      exit 1
+    fi
+    echo "  Mise à jour..."
+    if curl -fsSL "$REPO" -o "$INSTALL_PATH.tmp"; then
+      chmod +x "$INSTALL_PATH.tmp"
+      mv "$INSTALL_PATH.tmp" "$INSTALL_PATH"
+      echo "  ✓ bclaude mis à jour"
+    else
+      rm -f "$INSTALL_PATH.tmp"
+      echo "  ✗ Échec du téléchargement"
+      exit 1
+    fi
+    exit 0
+    ;;
   --help|-h)
     echo "  bclaude — Claude Code workspace launcher"
     echo ""
     echo "  Usage:"
     echo "    bclaude              Lancer le menu"
     echo "    bclaude --default P  Définir P comme workspace par défaut"
+    echo "    bclaude upgrade      Mettre à jour vers la dernière version"
     echo "    bclaude --help       Afficher cette aide"
     exit 0
     ;;
@@ -118,8 +138,8 @@ draw() {
     local name="${ITEMS[$i]}"
     local is_default=false
 
-    # Vérifier si c'est le défaut
-    if [[ "${ITEMS_TYPE[$i]}" == "workspace" && "$i" == "$DEFAULT_CHOICE" ]]; then
+    # Le premier workspace est toujours le défaut
+    if [[ "${ITEMS_TYPE[$i]}" == "workspace" && "$i" -eq 1 ]]; then
       is_default=true
     fi
 
@@ -227,9 +247,14 @@ while true; do
       ;;
     def)
       if [[ "${ITEMS_TYPE[$selected]}" == "workspace" ]]; then
-        echo "$selected" > "$DEFAULT_FILE"
-        DEFAULT_CHOICE="$selected"
+        local def_dir="${DIRS[$selected]}"
+        grep -vxF "$def_dir" "$WORKSPACES_FILE" > "$WORKSPACES_FILE.tmp" 2>/dev/null
+        { echo "$def_dir"; cat "$WORKSPACES_FILE.tmp"; } > "$WORKSPACES_FILE"
+        rm -f "$WORKSPACES_FILE.tmp"
+        # Le défaut est toujours ligne 1, déjà déplacé au-dessus
         show_message "${GREEN}✓${RST} Défaut → ${ITEMS[$selected]}"
+        build_items
+        selected=1
       fi
       ;;
   esac
