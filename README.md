@@ -14,6 +14,12 @@ curl -fsSL https://raw.githubusercontent.com/damienp199/bclaude/main/install.sh 
 
 Requires [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed.
 
+Make sure `~/.local/bin` is in your PATH. Add this to your `~/.zshrc` (or `~/.bashrc`) if needed:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
 ## Usage
 
 ```sh
