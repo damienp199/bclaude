@@ -115,7 +115,7 @@ build_items() {
   ITEMS=()
   ITEMS_TYPE=()
   for d in "${DIRS[@]}"; do
-    ITEMS+=($(basename "$d"))
+    ITEMS+=("$(basename "$d")")
     ITEMS_TYPE+=(workspace)
   done
 }
@@ -144,9 +144,9 @@ draw() {
     fi
 
     if (( i == selected )); then
-      printf "  ${ORANGE}❯${RST} ${BOLD}${WHITE}${name}${RST}"
+      printf "  ${ORANGE}❯${RST} ${BOLD}${WHITE}%s${RST}" "$name"
     else
-      printf "    ${GRAY}${name}${RST}"
+      printf "    ${GRAY}%s${RST}" "$name"
     fi
 
     if $is_default; then
@@ -212,9 +212,11 @@ while true; do
       ;;
     add)
       local new_path=$(prompt_input "Path :")
-      new_path="${new_path%/}"
       new_path="${new_path## }"
       new_path="${new_path%% }"
+      new_path="${new_path#\'}" ; new_path="${new_path%\'}"
+      new_path="${new_path#\"}" ; new_path="${new_path%\"}"
+      new_path="${new_path%/}"
       if [[ -z "$new_path" ]]; then
         continue
       elif [[ ! -d "$new_path" ]]; then
