@@ -4,6 +4,8 @@ A minimal TUI workspace launcher for [Claude Code](https://docs.anthropic.com/en
 
 Switch between projects instantly. No config files to edit — everything happens from the menu.
 
+![screenshot](screenshot.png)
+
 ## Install
 
 ```sh
