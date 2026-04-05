@@ -1,0 +1,236 @@
+#!/bin/zsh
+# bclaude — Claude Code workspace launcher
+# Install: curl -fsSL https://raw.githubusercontent.com/damienp199/bclaude/main/install.sh | sh
+
+export PATH="$HOME/.local/bin:$PATH"
+
+CONFIG_DIR="$HOME/.config/bclaude"
+WORKSPACES_FILE="$CONFIG_DIR/workspaces"
+
+if [[ ! -f "$WORKSPACES_FILE" ]]; then
+  mkdir -p "$CONFIG_DIR"
+  touch "$WORKSPACES_FILE"
+fi
+
+DEFAULT_FILE="$CONFIG_DIR/default"
+[[ -f "$DEFAULT_FILE" ]] && DEFAULT_CHOICE=$(cat "$DEFAULT_FILE") || DEFAULT_CHOICE=0
+
+# --- Couleurs ---
+RST=$'\e[0m'
+BOLD=$'\e[1m'
+DIM=$'\e[2m'
+ORANGE=$'\e[38;5;208m'
+WHITE=$'\e[97m'
+GRAY=$'\e[38;5;243m'
+GREEN=$'\e[38;5;107m'
+RED=$'\e[38;5;167m'
+
+# --- Options CLI ---
+case "$1" in
+  --default)
+    if [[ -z "$2" ]]; then
+      echo "  Usage: bclaude --default /path/to/project"
+      exit 1
+    fi
+    target="${2%/}"
+    if [[ ! -d "$target" ]]; then
+      echo "  ✗ Ce dossier n'existe pas : $target"
+      exit 1
+    fi
+    grep -vxF "$target" "$WORKSPACES_FILE" > "$WORKSPACES_FILE.tmp" 2>/dev/null
+    { echo "$target"; cat "$WORKSPACES_FILE.tmp"; } > "$WORKSPACES_FILE"
+    rm -f "$WORKSPACES_FILE.tmp"
+    echo "  ✓ Défaut : $(basename "$target")"
+    exit 0
+    ;;
+  --help|-h)
+    echo "  bclaude — Claude Code workspace launcher"
+    echo ""
+    echo "  Usage:"
+    echo "    bclaude              Lancer le menu"
+    echo "    bclaude --default P  Définir P comme workspace par défaut"
+    echo "    bclaude --help       Afficher cette aide"
+    exit 0
+    ;;
+esac
+
+if ! command -v claude &>/dev/null; then
+  echo "  ✗ claude introuvable. https://docs.anthropic.com/en/docs/claude-code"
+  exit 1
+fi
+
+# --- Restaurer le terminal proprement ---
+cleanup() { printf '\e[?25h\e[?1049l'; }
+trap cleanup EXIT INT TERM
+
+# --- Lecture clavier ---
+read_key() {
+  local key k1 k2
+  read -rsk1 key
+  if [[ "$key" == $'\e' ]]; then
+    read -rsk1 -t 0.01 k1
+    read -rsk1 -t 0.01 k2
+    key+="${k1}${k2}"
+  fi
+  case "$key" in
+    $'\e[A'|k) echo up    ;;
+    $'\e[B'|j) echo down  ;;
+    ''|$'\n')  echo enter  ;;
+    q)         echo quit   ;;
+    a)         echo add    ;;
+    s)         echo del    ;;
+    d)         echo def    ;;
+  esac
+}
+
+# --- Charger les workspaces ---
+load_dirs() {
+  DIRS=("${(@f)$(grep -v '^$' "$WORKSPACES_FILE")}")
+  [[ ${#DIRS[@]} -eq 1 && -z "${DIRS[1]}" ]] && DIRS=()
+}
+
+# --- Construire la liste complète (workspaces + quitter) ---
+build_items() {
+  load_dirs
+  ITEMS=()
+  ITEMS_TYPE=()
+  for d in "${DIRS[@]}"; do
+    ITEMS+=($(basename "$d"))
+    ITEMS_TYPE+=(workspace)
+  done
+}
+
+# --- Dessin du menu ---
+draw() {
+  clear
+  printf '\e[?25l'     # cacher curseur
+
+  local total=${#ITEMS[@]}
+
+  echo ""
+  printf "  ${ORANGE}█▀▀ █   █▀█ █ █ █▀▄ █▀▀${RST}   ${BOLD}${WHITE}█▀▀ █▀█ █▀▄ █▀▀${RST}\n"
+  printf "  ${ORANGE}█▄▄ █▄▄ █▀█ █▄█ █▄▀ ██▄${RST}   ${BOLD}${WHITE}█▄▄ █▄█ █▄▀ ██▄${RST}\n"
+  printf "  ${DIM}workspace launcher${RST}\n"
+  echo ""
+
+  # Items
+  for i in {1..$total}; do
+    local name="${ITEMS[$i]}"
+    local is_default=false
+
+    # Vérifier si c'est le défaut
+    if [[ "${ITEMS_TYPE[$i]}" == "workspace" && "$i" == "$DEFAULT_CHOICE" ]]; then
+      is_default=true
+    fi
+
+    if (( i == selected )); then
+      printf "  ${ORANGE}❯${RST} ${BOLD}${WHITE}${name}${RST}"
+    else
+      printf "    ${GRAY}${name}${RST}"
+    fi
+
+    if $is_default; then
+      printf "  ${DIM}${ORANGE}●${RST}"
+    fi
+
+    echo ""
+  done
+
+  printf "\n  ${DIM}↑↓${RST}${GRAY} naviguer${RST}  ${DIM}⏎${RST}${GRAY} ouvrir${RST}  ${GREEN}a${RST}${GRAY} ajouter${RST}  ${RED}s${RST}${GRAY} supprimer${RST}  ${DIM}d${RST}${GRAY} défaut${RST}  ${DIM}q${RST}${GRAY} quitter${RST}\n"
+}
+
+# --- Mode interactif (prompt pour les actions) ---
+prompt_input() {
+  local label="$1"
+  printf '\e[?25h' >&2  # montrer curseur
+  printf "\n  ${ORANGE}›${RST} ${label} " >&2
+  local value
+  read -r value
+  printf '\e[?25l' >&2  # cacher curseur
+  echo "$value"
+}
+
+show_message() {
+  local msg="$1"
+  printf "\n  ${msg}\n"
+  sleep 0.8
+}
+
+# --- Écran alternatif ---
+printf '\e[?1049h'
+
+build_items
+selected=$DEFAULT_CHOICE
+(( selected < 1 || selected > ${#ITEMS[@]} )) && selected=1
+
+while true; do
+  draw
+
+  local action=$(read_key)
+
+  case "$action" in
+    up)
+      (( selected > 1 )) && (( selected-- ))
+      ;;
+    down)
+      (( selected < ${#ITEMS[@]} )) && (( selected++ ))
+      ;;
+    enter)
+      target="${DIRS[$selected]}"
+      if [[ ! -d "$target" ]]; then
+        show_message "${RED}✗${RST} Dossier introuvable"
+        continue
+      fi
+      cleanup
+      cd "$target"
+      export CLAUDE_CODE_FORCE_FULL_LOGO=1
+      exec claude
+      ;;
+    quit)
+      cleanup
+      exec "${SHELL:-zsh}"
+      ;;
+    add)
+      local new_path=$(prompt_input "Path :")
+      new_path="${new_path%/}"
+      new_path="${new_path## }"
+      new_path="${new_path%% }"
+      if [[ -z "$new_path" ]]; then
+        continue
+      elif [[ ! -d "$new_path" ]]; then
+        show_message "${RED}✗${RST} Dossier introuvable"
+      elif grep -qxF "$new_path" "$WORKSPACES_FILE" 2>/dev/null; then
+        show_message "${RED}✗${RST} Déjà dans la liste"
+      else
+        echo "$new_path" >> "$WORKSPACES_FILE"
+        show_message "${GREEN}✓${RST} $(basename "$new_path")"
+        build_items
+        selected=1
+      fi
+      ;;
+    del)
+      if [[ ${#DIRS[@]} -eq 0 ]]; then
+        continue
+      fi
+      if [[ "${ITEMS_TYPE[$selected]}" == "workspace" ]]; then
+        local removed="${ITEMS[$selected]}"
+        local dir_to_remove="${DIRS[$selected]}"
+        local confirm=$(prompt_input "Supprimer ${BOLD}${removed}${RST} ? (o/N)")
+        if [[ "$confirm" == "o" || "$confirm" == "O" ]]; then
+          grep -vxF "$dir_to_remove" "$WORKSPACES_FILE" > "$WORKSPACES_FILE.tmp"
+          mv "$WORKSPACES_FILE.tmp" "$WORKSPACES_FILE"
+          show_message "${GREEN}✓${RST} Supprimé ${DIM}$removed${RST}"
+          build_items
+          (( selected > ${#ITEMS[@]} )) && selected=${#ITEMS[@]}
+        fi
+      fi
+      ;;
+    def)
+      if [[ "${ITEMS_TYPE[$selected]}" == "workspace" ]]; then
+        echo "$selected" > "$DEFAULT_FILE"
+        DEFAULT_CHOICE="$selected"
+        show_message "${GREEN}✓${RST} Défaut → ${ITEMS[$selected]}"
+      fi
+      ;;
+  esac
+done
