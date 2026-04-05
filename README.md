@@ -24,6 +24,8 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ```sh
 bclaude
+# or shorter:
+bcl
 ```
 
 | Key | Action |
@@ -60,6 +62,6 @@ bclaude --default /path/to/project
 ## Uninstall
 
 ```sh
-rm ~/.local/bin/bclaude
+rm ~/.local/bin/bclaude ~/.local/bin/bcl
 rm -rf ~/.config/bclaude
 ```
