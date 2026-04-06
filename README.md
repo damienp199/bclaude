@@ -1,72 +1,72 @@
 # CLAUDE BOOT
 
-A minimal TUI workspace launcher for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
+Un lanceur TUI minimaliste pour [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 
-Save your most-used project folders and launch Claude Code in one keystroke — no more `cd`-ing around every time. Recently used Claude projects are also shown automatically.
+Enregistrez vos dossiers de projets favoris et lancez Claude Code en une touche — fini les `cd` à répétition. Les projets Claude récemment utilisés s'affichent aussi automatiquement.
 
 ![screenshot](screenshot.png)
 
-## Install
+## Installation
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/damienp199/bclaude/main/install.sh | sh
 ```
 
-Requires [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed.
+Nécessite le [CLI Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 
-Make sure `~/.local/bin` is in your PATH. Add this to your `~/.zshrc` (or `~/.bashrc`) if needed:
+Assurez-vous que `~/.local/bin` est dans votre PATH. Ajoutez ceci à votre `~/.zshrc` (ou `~/.bashrc`) si nécessaire :
 
 ```sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-## Usage
+## Utilisation
 
 ```sh
 bclaude
-# or shorter:
+# ou plus court :
 bcl
 ```
 
-| Key | Action |
-|-----|--------|
-| `↑` `↓` / `j` `k` | Navigate |
-| `Enter` | Open workspace in Claude Code |
-| `a` | Add a workspace (or pin a recent) |
-| `s` | Remove a workspace |
-| `d` | Set as default |
-| `q` | Quit |
+| Touche | Action |
+|--------|--------|
+| `↑` `↓` / `j` `k` | Naviguer |
+| `Enter` | Ouvrir le workspace dans Claude Code |
+| `a` | Ajouter un workspace (ou épingler un récent) |
+| `s` | Supprimer un workspace |
+| `d` | Définir par défaut |
+| `q` | Quitter |
 
-### Recents
+### Récents
 
-The menu automatically shows up to 5 recently used Claude Code projects below your pinned workspaces. These are detected from `~/.claude/projects/` and sorted by last use. Directories that no longer exist or are already pinned are excluded.
+Le menu affiche automatiquement jusqu'à 5 projets Claude Code récemment utilisés sous vos workspaces épinglés. Ils sont détectés depuis `~/.claude/projects/` et triés par dernière utilisation. Les dossiers supprimés ou déjà épinglés sont exclus.
 
-Press `a` on a recent to pin it to your workspaces, or `d` to set it as default.
+Appuyez sur `a` sur un récent pour l'épingler, ou `d` pour le définir par défaut.
 
-### Add a workspace
+### Ajouter un workspace
 
-Press `a` in the menu, then type the full path to your project folder (e.g. `/Users/me/projects/my-app`). The folder must already exist.
+Appuyez sur `a` dans le menu, puis saisissez le chemin complet de votre dossier de projet (ex : `/Users/me/projects/my-app`). Le dossier doit déjà exister.
 
-You can also add workspaces manually by appending a path to `~/.config/bclaude/workspaces` (one path per line):
+Vous pouvez aussi ajouter des workspaces manuellement en ajoutant un chemin à `~/.config/bclaude/workspaces` (un chemin par ligne) :
 
 ```sh
 echo "/path/to/project" >> ~/.config/bclaude/workspaces
 ```
 
-### Set default from CLI
+### Définir le défaut via CLI
 
 ```sh
 bclaude --default /path/to/project
 ```
 
-## How it works
+## Fonctionnement
 
-- Workspaces are stored in `~/.config/bclaude/workspaces` (one path per line)
-- Recent projects are read from `~/.claude/projects/` (created by Claude Code itself)
-- Selecting a workspace or recent `cd`s into it and launches `claude`
-- No dependencies beyond `zsh` and `claude`
+- Les workspaces sont stockés dans `~/.config/bclaude/workspaces` (un chemin par ligne)
+- Les projets récents sont lus depuis `~/.claude/projects/` (créé par Claude Code)
+- Sélectionner un workspace ou un récent fait un `cd` et lance `claude`
+- Aucune dépendance en dehors de `zsh` et `claude`
 
-## Uninstall
+## Désinstallation
 
 ```sh
 rm ~/.local/bin/bclaude ~/.local/bin/bcl
