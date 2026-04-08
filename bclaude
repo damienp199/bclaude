@@ -109,6 +109,18 @@ load_dirs() {
   [[ ${#DIRS[@]} -eq 1 && -z "${DIRS[1]}" ]] && DIRS=()
 }
 
+# --- Charger les sous-dossiers d'un dossier parent ---
+load_subdirs() {
+  local parent="$1"
+  local subdirs=()
+  for d in "$parent"/*/; do
+    [[ -d "$d" ]] || continue
+    d="${d%/}"
+    subdirs+=("$d")
+  done
+  echo "${(F)subdirs}"
+}
+
 MAX_RECENTS=5
 
 # --- Convertir un nom de dossier Claude en path réel ---
@@ -176,10 +188,16 @@ load_recents() {
     [[ -z "$real_path" || ! -d "$real_path" ]] && continue
     # Ignorer le home directory (pas un vrai workspace)
     [[ "$real_path" == "$HOME" ]] && continue
-    # Exclure ceux déjà dans les workspaces
+    # Exclure ceux déjà dans les workspaces (directs et group-items)
     local already=false
     for d in "${DIRS[@]}"; do
+      # Direct workspace
       [[ "$d" == "$real_path" ]] && { already=true; break; }
+      # Parent group : vérifier si real_path est un sous-dossier
+      if [[ "$d" == ">"* ]]; then
+        local parent="${d#>}"
+        [[ "$real_path" == "$parent"/* ]] && { already=true; break; }
+      fi
     done
     $already && continue
     RECENTS+=("$real_path")
@@ -194,17 +212,57 @@ build_items() {
   ITEMS=()
   ITEMS_TYPE=()
   ITEMS_FULL_PATH=()
+  ITEMS_GROUP=()  # nom du groupe parent (vide pour les directs)
   for d in "${DIRS[@]}"; do
-    ITEMS+=("$(basename "$d")")
-    ITEMS_TYPE+=(workspace)
-    ITEMS_FULL_PATH+=("$d")
+    if [[ "$d" == ">"* ]]; then
+      # Dossier parent : lister ses sous-dossiers
+      local parent="${d#>}"
+      [[ ! -d "$parent" ]] && continue
+      local subdirs=("${(@f)$(load_subdirs "$parent")}")
+      [[ ${#subdirs[@]} -eq 0 ]] && continue
+      [[ ${#subdirs[@]} -eq 1 && -z "${subdirs[1]}" ]] && continue
+      # Header du groupe (non sélectionnable)
+      ITEMS+=("$(basename "$parent")")
+      ITEMS_TYPE+=(group-header)
+      ITEMS_FULL_PATH+=("$parent")
+      ITEMS_GROUP+=("")
+      # Sous-dossiers (exclure ceux déjà épinglés en direct)
+      for sd in "${subdirs[@]}"; do
+        [[ -z "$sd" ]] && continue
+        local is_direct=false
+        for dd in "${DIRS[@]}"; do
+          [[ "$dd" == "$sd" ]] && { is_direct=true; break; }
+        done
+        $is_direct && continue
+        ITEMS+=("$(basename "$sd")")
+        ITEMS_TYPE+=(group-item)
+        ITEMS_FULL_PATH+=("$sd")
+        ITEMS_GROUP+=("$parent")
+      done
+    else
+      ITEMS+=("$(basename "$d")")
+      ITEMS_TYPE+=(workspace)
+      ITEMS_FULL_PATH+=("$d")
+      ITEMS_GROUP+=("")
+    fi
   done
   RECENT_START_INDEX=$(( ${#ITEMS[@]} + 1 ))
   for d in "${RECENTS[@]}"; do
     ITEMS+=("$(basename "$d")")
     ITEMS_TYPE+=(recent)
     ITEMS_FULL_PATH+=("$d")
+    ITEMS_GROUP+=("")
   done
+}
+
+# --- S'assurer que selected est sur un item sélectionnable ---
+fix_selected() {
+  (( selected < 1 )) && selected=1
+  (( selected > ${#ITEMS[@]} )) && selected=${#ITEMS[@]}
+  while (( selected <= ${#ITEMS[@]} )) && [[ "${ITEMS_TYPE[$selected]}" == "group-header" ]]; do
+    (( selected++ ))
+  done
+  (( selected > ${#ITEMS[@]} )) && selected=${#ITEMS[@]}
 }
 
 # --- Dessin du menu ---
@@ -221,19 +279,33 @@ draw() {
   echo ""
 
   # Items
+  local shown_workspace_header=false
   local shown_recent_header=false
   for i in {1..$total}; do
     local name="${ITEMS[$i]}"
+    local type="${ITEMS_TYPE[$i]}"
     local is_default=false
 
+    # Header de groupe (non sélectionnable)
+    if [[ "$type" == "group-header" ]]; then
+      printf "\n  ${DIM}── %s ──${RST}\n" "$name"
+      continue
+    fi
+
+    # Afficher le header "projets" avant le premier workspace
+    if [[ "$type" == "workspace" ]] && ! $shown_workspace_header; then
+      printf "  ${DIM}── projets ──${RST}\n"
+      shown_workspace_header=true
+    fi
+
     # Afficher le header "Récents" avant le premier item recent
-    if [[ "${ITEMS_TYPE[$i]}" == "recent" ]] && ! $shown_recent_header; then
+    if [[ "$type" == "recent" ]] && ! $shown_recent_header; then
       printf "\n  ${DIM}── récents ──${RST}\n"
       shown_recent_header=true
     fi
 
     # Le premier workspace est toujours le défaut
-    if [[ "${ITEMS_TYPE[$i]}" == "workspace" && "$i" -eq 1 ]]; then
+    if [[ "$type" == "workspace" && "$i" -eq 1 ]]; then
       is_default=true
     fi
 
@@ -275,7 +347,7 @@ printf '\e[?1049h'
 
 build_items
 selected=$DEFAULT_CHOICE
-(( selected < 1 || selected > ${#ITEMS[@]} )) && selected=1
+fix_selected
 
 while true; do
   draw
@@ -284,10 +356,18 @@ while true; do
 
   case "$action" in
     up)
-      (( selected > 1 )) && (( selected-- ))
+      local prev=$(( selected - 1 ))
+      while (( prev >= 1 )) && [[ "${ITEMS_TYPE[$prev]}" == "group-header" ]]; do
+        (( prev-- ))
+      done
+      (( prev >= 1 )) && selected=$prev
       ;;
     down)
-      (( selected < ${#ITEMS[@]} )) && (( selected++ ))
+      local next=$(( selected + 1 ))
+      while (( next <= ${#ITEMS[@]} )) && [[ "${ITEMS_TYPE[$next]}" == "group-header" ]]; do
+        (( next++ ))
+      done
+      (( next <= ${#ITEMS[@]} )) && selected=$next
       ;;
     enter)
       target="${ITEMS_FULL_PATH[$selected]}"
@@ -311,7 +391,7 @@ while true; do
         echo "$pin_path" >> "$WORKSPACES_FILE"
         show_message "${GREEN}✓${RST} Épinglé ${DIM}$(basename "$pin_path")${RST}"
         build_items
-        selected=1
+        selected=1; fix_selected
         continue
       fi
       local new_path=$(prompt_input "Path :")
@@ -324,13 +404,28 @@ while true; do
         continue
       elif [[ ! -d "$new_path" ]]; then
         show_message "${RED}✗${RST} Dossier introuvable"
-      elif grep -qxF "$new_path" "$WORKSPACES_FILE" 2>/dev/null; then
-        show_message "${RED}✗${RST} Déjà dans la liste"
       else
-        echo "$new_path" >> "$WORKSPACES_FILE"
-        show_message "${GREEN}✓${RST} $(basename "$new_path")"
-        build_items
-        selected=1
+        local mode=$(prompt_input "Direct ${DIM}d${RST} ou parent ${DIM}p${RST} ? (d/p)")
+        if [[ "$mode" == "p" || "$mode" == "P" ]]; then
+          local entry=">$new_path"
+          if grep -qxF "$entry" "$WORKSPACES_FILE" 2>/dev/null; then
+            show_message "${RED}✗${RST} Déjà dans la liste"
+          else
+            echo "$entry" >> "$WORKSPACES_FILE"
+            show_message "${GREEN}✓${RST} Groupe $(basename "$new_path")"
+            build_items
+            selected=1; fix_selected
+          fi
+        else
+          if grep -qxF "$new_path" "$WORKSPACES_FILE" 2>/dev/null; then
+            show_message "${RED}✗${RST} Déjà dans la liste"
+          else
+            echo "$new_path" >> "$WORKSPACES_FILE"
+            show_message "${GREEN}✓${RST} $(basename "$new_path")"
+            build_items
+            selected=1; fix_selected
+          fi
+        fi
       fi
       ;;
     del)
@@ -346,12 +441,23 @@ while true; do
           mv "$WORKSPACES_FILE.tmp" "$WORKSPACES_FILE"
           show_message "${GREEN}✓${RST} Supprimé ${DIM}$removed${RST}"
           build_items
-          (( selected > ${#ITEMS[@]} )) && selected=${#ITEMS[@]}
+          fix_selected
+        fi
+      elif [[ "${ITEMS_TYPE[$selected]}" == "group-item" ]]; then
+        local group_parent="${ITEMS_GROUP[$selected]}"
+        local group_name="$(basename "$group_parent")"
+        local confirm=$(prompt_input "Supprimer le groupe ${BOLD}${group_name}${RST} ? (o/N)")
+        if [[ "$confirm" == "o" || "$confirm" == "O" ]]; then
+          grep -vxF ">$group_parent" "$WORKSPACES_FILE" > "$WORKSPACES_FILE.tmp"
+          mv "$WORKSPACES_FILE.tmp" "$WORKSPACES_FILE"
+          show_message "${GREEN}✓${RST} Supprimé ${DIM}$group_name${RST}"
+          build_items
+          fix_selected
         fi
       fi
       ;;
     def)
-      if [[ "${ITEMS_TYPE[$selected]}" == "workspace" || "${ITEMS_TYPE[$selected]}" == "recent" ]]; then
+      if [[ "${ITEMS_TYPE[$selected]}" == "workspace" || "${ITEMS_TYPE[$selected]}" == "recent" || "${ITEMS_TYPE[$selected]}" == "group-item" ]]; then
         local def_dir="${ITEMS_FULL_PATH[$selected]}"
         grep -vxF "$def_dir" "$WORKSPACES_FILE" > "$WORKSPACES_FILE.tmp" 2>/dev/null
         { echo "$def_dir"; cat "$WORKSPACES_FILE.tmp"; } > "$WORKSPACES_FILE"
@@ -359,7 +465,7 @@ while true; do
         # Le défaut est toujours ligne 1, déjà déplacé au-dessus
         show_message "${GREEN}✓${RST} Défaut → ${ITEMS[$selected]}"
         build_items
-        selected=1
+        selected=1; fix_selected
       fi
       ;;
   esac

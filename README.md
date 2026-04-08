@@ -45,12 +45,21 @@ Appuyez sur `a` sur un récent pour l'épingler, ou `d` pour le définir par dé
 
 ### Ajouter un workspace
 
-Appuyez sur `a` dans le menu, puis saisissez le chemin complet de votre dossier de projet (ex : `/Users/me/projects/my-app`). Le dossier doit déjà exister.
+Appuyez sur `a` dans le menu, puis saisissez le chemin complet de votre dossier de projet. Deux modes sont proposés :
 
-Vous pouvez aussi ajouter des workspaces manuellement en ajoutant un chemin à `~/.config/bclaude/workspaces` (un chemin par ligne) :
+- **Direct (`d`)** — Ajoute le dossier comme un projet unique
+- **Parent (`p`)** — Ajoute un dossier parent dont tous les sous-dossiers sont listés dynamiquement comme autant de projets
+
+Le mode parent est utile quand vous organisez vos projets dans un dossier commun (ex : `~/Documents/Business/` contenant `Projet A`, `Projet B`, etc.). Les sous-dossiers apparaissent automatiquement sous un header de section — pas besoin de les ajouter un par un.
+
+Vous pouvez aussi éditer manuellement `~/.config/bclaude/workspaces` (un chemin par ligne) :
 
 ```sh
+# Workspace direct
 echo "/path/to/project" >> ~/.config/bclaude/workspaces
+
+# Dossier parent (préfixe >)
+echo ">/path/to/parent" >> ~/.config/bclaude/workspaces
 ```
 
 ### Définir le défaut via CLI
@@ -61,7 +70,7 @@ bclaude --default /path/to/project
 
 ## Fonctionnement
 
-- Les workspaces sont stockés dans `~/.config/bclaude/workspaces` (un chemin par ligne)
+- Les workspaces sont stockés dans `~/.config/bclaude/workspaces` (un chemin par ligne, préfixe `>` pour les parents)
 - Les projets récents sont lus depuis `~/.claude/projects/` (créé par Claude Code)
 - Sélectionner un workspace ou un récent fait un `cd` et lance `claude`
 - Aucune dépendance en dehors de `zsh` et `claude`
