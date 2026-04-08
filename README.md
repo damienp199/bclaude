@@ -63,6 +63,14 @@ echo "/path/to/project" >> ~/.config/bclaude/workspaces
 echo ">/path/to/parent" >> ~/.config/bclaude/workspaces
 ```
 
+### Lancer le défaut directement
+
+```sh
+bclaude -d
+```
+
+Ouvre immédiatement le workspace par défaut (marqué `●`) sans afficher le menu.
+
 ### Définir le défaut via CLI
 
 ```sh

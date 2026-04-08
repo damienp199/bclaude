@@ -67,6 +67,7 @@ case "$1" in
     echo ""
     echo "  Usage:"
     echo "    bclaude              Lancer le menu"
+    echo "    bclaude -d           Lancer le workspace par défaut"
     echo "    bclaude --default P  Définir P comme workspace par défaut"
     echo "    bclaude upgrade      Mettre à jour vers la dernière version"
     echo "    bclaude --help       Afficher cette aide"
@@ -385,6 +386,23 @@ show_message() {
   printf "\n  ${msg}\n"
   sleep 0.8
 }
+
+# --- Lancement direct du défaut ---
+if [[ "$1" == "-d" ]]; then
+  build_items
+  if [[ ${#ITEMS[@]} -eq 0 ]]; then
+    echo "  ✗ Aucun workspace configuré"
+    exit 1
+  fi
+  target="${ITEMS_FULL_PATH[$DEFAULT_CHOICE]}"
+  if [[ ! -d "$target" ]]; then
+    echo "  ✗ Dossier introuvable : $target"
+    exit 1
+  fi
+  cd "$target"
+  export CLAUDE_CODE_FORCE_FULL_LOGO=1
+  exec claude
+fi
 
 # --- Écran alternatif ---
 printf '\e[?1049h'
