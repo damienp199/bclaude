@@ -71,12 +71,6 @@ bclaude -d
 
 Ouvre immédiatement le workspace par défaut (marqué `●`) sans afficher le menu.
 
-### Définir le défaut via CLI
-
-```sh
-bclaude --default /path/to/project
-```
-
 ## Fonctionnement
 
 - Les workspaces sont stockés dans `~/.config/bclaude/workspaces` (un chemin par ligne, préfixe `>` pour les parents)

@@ -27,22 +27,6 @@ RED=$'\e[38;5;167m'
 
 # --- Options CLI ---
 case "$1" in
-  --default)
-    if [[ -z "$2" ]]; then
-      echo "  Usage: bclaude --default /path/to/project"
-      exit 1
-    fi
-    target="${2%/}"
-    if [[ ! -d "$target" ]]; then
-      echo "  ✗ Ce dossier n'existe pas : $target"
-      exit 1
-    fi
-    grep -vxF "$target" "$WORKSPACES_FILE" > "$WORKSPACES_FILE.tmp" 2>/dev/null
-    { echo "$target"; cat "$WORKSPACES_FILE.tmp"; } > "$WORKSPACES_FILE"
-    rm -f "$WORKSPACES_FILE.tmp"
-    echo "  ✓ Défaut : $(basename "$target")"
-    exit 0
-    ;;
   upgrade|--upgrade)
     REPO="https://raw.githubusercontent.com/damienp199/bclaude/main/bclaude"
     INSTALL_PATH="$HOME/.local/bin/bclaude"
@@ -68,7 +52,6 @@ case "$1" in
     echo "  Usage:"
     echo "    bclaude              Lancer le menu"
     echo "    bclaude -d           Lancer le workspace par défaut"
-    echo "    bclaude --default P  Définir P comme workspace par défaut"
     echo "    bclaude upgrade      Mettre à jour vers la dernière version"
     echo "    bclaude --help       Afficher cette aide"
     exit 0
