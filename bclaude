@@ -100,6 +100,7 @@ read_key() {
     a)         echo add    ;;
     s)         echo del    ;;
     d)         echo def    ;;
+    [1-9])     echo "num$key" ;;
   esac
 }
 
@@ -213,45 +214,67 @@ build_items() {
   ITEMS_TYPE=()
   ITEMS_FULL_PATH=()
   ITEMS_GROUP=()  # nom du groupe parent (vide pour les directs)
+  ITEMS_LAST_IN_GROUP=()  # true si dernier item du groupe
+  ITEMS_NUM=()  # numéro raccourci (1-9, vide pour headers)
+  local num_counter=0
   for d in "${DIRS[@]}"; do
     if [[ "$d" == ">"* ]]; then
-      # Dossier parent : lister ses sous-dossiers
       local parent="${d#>}"
       [[ ! -d "$parent" ]] && continue
       local subdirs=("${(@f)$(load_subdirs "$parent")}")
       [[ ${#subdirs[@]} -eq 0 ]] && continue
       [[ ${#subdirs[@]} -eq 1 && -z "${subdirs[1]}" ]] && continue
-      # Header du groupe (non sélectionnable)
-      ITEMS+=("$(basename "$parent")")
-      ITEMS_TYPE+=(group-header)
-      ITEMS_FULL_PATH+=("$parent")
-      ITEMS_GROUP+=("")
-      # Sous-dossiers (exclure ceux déjà épinglés en direct)
+      local filtered=()
       for sd in "${subdirs[@]}"; do
         [[ -z "$sd" ]] && continue
         local is_direct=false
         for dd in "${DIRS[@]}"; do
           [[ "$dd" == "$sd" ]] && { is_direct=true; break; }
         done
-        $is_direct && continue
+        $is_direct || filtered+=("$sd")
+      done
+      [[ ${#filtered[@]} -eq 0 ]] && continue
+      ITEMS+=("$(basename "$parent")")
+      ITEMS_TYPE+=(group-header)
+      ITEMS_FULL_PATH+=("$parent")
+      ITEMS_GROUP+=("")
+      ITEMS_LAST_IN_GROUP+=(false)
+      ITEMS_NUM+=("")
+      local count=${#filtered[@]}
+      local idx=0
+      for sd in "${filtered[@]}"; do
+        (( idx++ ))
+        (( num_counter++ ))
         ITEMS+=("$(basename "$sd")")
         ITEMS_TYPE+=(group-item)
         ITEMS_FULL_PATH+=("$sd")
         ITEMS_GROUP+=("$parent")
+        if (( idx == count )); then
+          ITEMS_LAST_IN_GROUP+=(true)
+        else
+          ITEMS_LAST_IN_GROUP+=(false)
+        fi
+        (( num_counter <= 9 )) && ITEMS_NUM+=("$num_counter") || ITEMS_NUM+=("")
       done
     else
+      (( num_counter++ ))
       ITEMS+=("$(basename "$d")")
       ITEMS_TYPE+=(workspace)
       ITEMS_FULL_PATH+=("$d")
       ITEMS_GROUP+=("")
+      ITEMS_LAST_IN_GROUP+=(false)
+      (( num_counter <= 9 )) && ITEMS_NUM+=("$num_counter") || ITEMS_NUM+=("")
     fi
   done
   RECENT_START_INDEX=$(( ${#ITEMS[@]} + 1 ))
   for d in "${RECENTS[@]}"; do
+    (( num_counter++ ))
     ITEMS+=("$(basename "$d")")
     ITEMS_TYPE+=(recent)
     ITEMS_FULL_PATH+=("$d")
     ITEMS_GROUP+=("")
+    ITEMS_LAST_IN_GROUP+=(false)
+    (( num_counter <= 9 )) && ITEMS_NUM+=("$num_counter") || ITEMS_NUM+=("")
   done
 }
 
@@ -288,19 +311,19 @@ draw() {
 
     # Header de groupe (non sélectionnable)
     if [[ "$type" == "group-header" ]]; then
-      printf "\n  ${DIM}── %s ──${RST}\n" "$name"
+      printf "\n  ${BOLD}${GRAY}⌂ ${(U)name}${RST}\n"
       continue
     fi
 
-    # Afficher le header "projets" avant le premier workspace
+    # Afficher le header "Projets" avant le premier workspace
     if [[ "$type" == "workspace" ]] && ! $shown_workspace_header; then
-      printf "  ${DIM}── projets ──${RST}\n"
+      printf "  ${BOLD}${GRAY}» PROJETS${RST}\n"
       shown_workspace_header=true
     fi
 
     # Afficher le header "Récents" avant le premier item recent
     if [[ "$type" == "recent" ]] && ! $shown_recent_header; then
-      printf "\n  ${DIM}── récents ──${RST}\n"
+      printf "\n  ${BOLD}${GRAY}◷ RÉCENTS${RST}\n"
       shown_recent_header=true
     fi
 
@@ -309,10 +332,31 @@ draw() {
       is_default=true
     fi
 
+    # Préfixe arbre pour les group-items
+    local prefix=""
+    if [[ "$type" == "group-item" ]]; then
+      if [[ "${ITEMS_LAST_IN_GROUP[$i]}" == "true" ]]; then
+        prefix="└ "
+      else
+        prefix="├ "
+      fi
+    fi
+
+    # Préfixe par défaut pour les non group-items
+    if [[ -z "$prefix" ]]; then
+      prefix="- "
+    fi
+
+    local num="${ITEMS_NUM[$i]}"
+    local num_display=""
+    if [[ -n "$num" ]]; then
+      num_display="${num} "
+    fi
+
     if (( i == selected )); then
-      printf "  ${ORANGE}❯${RST} ${BOLD}${WHITE}%s${RST}" "$name"
+      printf "  ${ORANGE}❯${RST} ${BOLD}${WHITE}%s%s%s${RST}" "$prefix" "$num_display" "$name"
     else
-      printf "    ${GRAY}%s${RST}" "$name"
+      printf "    ${GRAY}%s%s%s${RST}" "$prefix" "$num_display" "$name"
     fi
 
     if $is_default; then
@@ -467,6 +511,23 @@ while true; do
         build_items
         selected=1; fix_selected
       fi
+      ;;
+    num*)
+      local pressed="${action#num}"
+      # Trouver l'item correspondant au numéro
+      for i in {1..${#ITEMS[@]}}; do
+        if [[ "${ITEMS_NUM[$i]}" == "$pressed" ]]; then
+          target="${ITEMS_FULL_PATH[$i]}"
+          if [[ ! -d "$target" ]]; then
+            show_message "${RED}✗${RST} Dossier introuvable"
+            break
+          fi
+          cleanup
+          cd "$target"
+          export CLAUDE_CODE_FORCE_FULL_LOGO=1
+          exec claude
+        fi
+      done
       ;;
   esac
 done

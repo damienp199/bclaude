@@ -32,6 +32,7 @@ bcl
 |--------|--------|
 | `↑` `↓` / `j` `k` | Naviguer |
 | `Enter` | Ouvrir le workspace dans Claude Code |
+| `1`–`9` | Ouvrir directement le workspace correspondant |
 | `a` | Ajouter un workspace (ou épingler un récent) |
 | `s` | Supprimer un workspace |
 | `d` | Définir par défaut |
