@@ -2,6 +2,9 @@
 # bclaude — Claude Code workspace launcher
 # Install: curl -fsSL https://raw.githubusercontent.com/damienp199/bclaude/main/install.sh | sh
 
+[[ -f ~/.zprofile ]] && source ~/.zprofile
+[[ -f ~/.zshrc ]] && source ~/.zshrc
+
 export PATH="$HOME/.local/bin:$PATH"
 
 CONFIG_DIR="$HOME/.config/bclaude"
@@ -274,20 +277,17 @@ fix_selected() {
 
 # --- Dessin du menu ---
 draw() {
-  clear
-  printf '\e[?25l'     # cacher curseur
+  printf '\e[?25l\e[H'   # cacher curseur + curseur en haut (pas de clear → pas de flicker)
 
   local total=${#ITEMS[@]}
 
-  echo ""
-  printf "  ${ORANGE}█▀▀ █   █▀█ █ █ █▀▄ █▀▀${RST}   ${BOLD}${WHITE}██▄ █▀█ █▀█ ▀█▀${RST}\n"
-  printf "  ${ORANGE}█▄▄ █▄▄ █▀█ █▄█ █▄▀ ██▄${RST}   ${BOLD}${WHITE}██▀ █▄█ █▄█  █ ${RST}\n"
-  printf "  ${DIM}workspace launcher${RST}\n"
-  echo ""
-
-  # Items
+  # 1. Construire toutes les lignes en mémoire (avec l'index d'item associé,
+  #    0 pour les lignes non sélectionnables : blancs, headers).
+  local -a OUT OUT_ITEM
+  OUT=() ; OUT_ITEM=()
   local shown_workspace_header=false
   local shown_recent_header=false
+  local i
   for i in {1..$total}; do
     local name="${ITEMS[$i]}"
     local type="${ITEMS_TYPE[$i]}"
@@ -295,19 +295,21 @@ draw() {
 
     # Header de groupe (non sélectionnable)
     if [[ "$type" == "group-header" ]]; then
-      printf "\n  ${BOLD}${GRAY}⌂ ${(U)name}${RST}\n"
+      OUT+=("") ; OUT_ITEM+=(0)
+      OUT+=("  ${BOLD}${GRAY}⌂ ${(U)name}${RST}") ; OUT_ITEM+=(0)
       continue
     fi
 
-    # Afficher le header "Projets" avant le premier workspace
+    # Header "Projets" avant le premier workspace
     if [[ "$type" == "workspace" ]] && ! $shown_workspace_header; then
-      printf "  ${BOLD}${GRAY}» PROJETS${RST}\n"
+      OUT+=("  ${BOLD}${GRAY}» PROJETS${RST}") ; OUT_ITEM+=(0)
       shown_workspace_header=true
     fi
 
-    # Afficher le header "Récents" avant le premier item recent
+    # Header "Récents" avant le premier item recent
     if [[ "$type" == "recent" ]] && ! $shown_recent_header; then
-      printf "\n  ${BOLD}${GRAY}◷ RÉCENTS${RST}\n"
+      OUT+=("") ; OUT_ITEM+=(0)
+      OUT+=("  ${BOLD}${GRAY}◷ RÉCENTS${RST}") ; OUT_ITEM+=(0)
       shown_recent_header=true
     fi
 
@@ -325,32 +327,90 @@ draw() {
         prefix="├ "
       fi
     fi
-
-    # Préfixe par défaut pour les non group-items
-    if [[ -z "$prefix" ]]; then
-      prefix="- "
-    fi
+    [[ -z "$prefix" ]] && prefix="- "
 
     local num="${ITEMS_NUM[$i]}"
     local num_display=""
-    if [[ -n "$num" ]]; then
-      num_display="${num} "
-    fi
+    [[ -n "$num" ]] && num_display="${num} "
 
+    local line=""
     if (( i == selected )); then
-      printf "  ${ORANGE}❯${RST} ${BOLD}${WHITE}%s%s%s${RST}" "$prefix" "$num_display" "$name"
+      line="  ${ORANGE}❯${RST} ${BOLD}${WHITE}${prefix}${num_display}${name}${RST}"
     else
-      printf "    ${GRAY}%s%s%s${RST}" "$prefix" "$num_display" "$name"
+      line="    ${GRAY}${prefix}${num_display}${name}${RST}"
     fi
-
-    if $is_default; then
-      printf "  ${DIM}${ORANGE}●${RST}"
-    fi
-
-    echo ""
+    $is_default && line="${line}  ${DIM}${ORANGE}●${RST}"
+    OUT+=("$line") ; OUT_ITEM+=("$i")
   done
 
-  printf "\n  ${DIM}↑↓${RST}${GRAY} naviguer${RST}  ${DIM}⏎${RST}${GRAY} ouvrir${RST}  ${GREEN}a${RST}${GRAY} ajouter${RST}  ${RED}s${RST}${GRAY} supprimer${RST}  ${DIM}d${RST}${GRAY} défaut${RST}  ${DIM}q${RST}${GRAY} quitter${RST}\n"
+  local n=${#OUT[@]}
+
+  # 2. Calcul du viewport en fonction de la hauteur du terminal.
+  #    Fixe : 5 lignes logo + 2 indicateurs de scroll + 2 footer = 9.
+  local term_h=${LINES:-0}
+  (( term_h <= 0 )) && term_h=$(tput lines 2>/dev/null)
+  [[ -z "$term_h" || "$term_h" -le 0 ]] && term_h=24
+  local avail=$(( term_h - 9 ))
+  (( avail < 3 )) && avail=3
+
+  # Ligne où se trouve l'item sélectionné
+  local sel_line=1 idx
+  for idx in {1..$n}; do
+    [[ "${OUT_ITEM[$idx]}" == "$selected" ]] && { sel_line=$idx; break; }
+  done
+
+  # scroll_top persistant entre les rendus
+  : ${scroll_top:=1}
+  if (( n <= avail )); then
+    scroll_top=1
+  else
+    (( sel_line < scroll_top )) && scroll_top=$sel_line
+    (( sel_line > scroll_top + avail - 1 )) && scroll_top=$(( sel_line - avail + 1 ))
+    local max_top=$(( n - avail + 1 ))
+    (( scroll_top > max_top )) && scroll_top=$max_top
+    (( scroll_top < 1 )) && scroll_top=1
+  fi
+  local scroll_bot=$(( scroll_top + avail - 1 ))
+  (( scroll_bot > n )) && scroll_bot=$n
+
+  # 3. Rendu : assembler toute la frame dans un tableau, puis l'écrire en
+  #    un seul printf (write atomique). Chaque ligne est nettoyée en fin
+  #    avec \e[K, et le résidu en bas effacé avec \e[J → zéro flicker.
+  local -a FRAME
+  FRAME=(
+    ""
+    "  ${ORANGE}█▀▀ █   █▀█ █ █ █▀▄ █▀▀${RST}   ${BOLD}${WHITE}██▄ █▀█ █▀█ ▀█▀${RST}"
+    "  ${ORANGE}█▄▄ █▄▄ █▀█ █▄█ █▄▀ ██▄${RST}   ${BOLD}${WHITE}██▀ █▄█ █▄█  █ ${RST}"
+    "  ${DIM}workspace launcher${RST}"
+    ""
+  )
+
+  # Indicateur haut
+  if (( scroll_top > 1 )); then
+    FRAME+=("  ${DIM}${ORANGE}▲${RST} ${DIM}$(( scroll_top - 1 )) de plus${RST}")
+  else
+    FRAME+=("")
+  fi
+
+  # Lignes visibles
+  for idx in {$scroll_top..$scroll_bot}; do
+    FRAME+=("${OUT[$idx]}")
+  done
+
+  # Indicateur bas
+  if (( scroll_bot < n )); then
+    FRAME+=("  ${DIM}${ORANGE}▼${RST} ${DIM}$(( n - scroll_bot )) de plus${RST}")
+  else
+    FRAME+=("")
+  fi
+
+  FRAME+=(
+    ""
+    "  ${DIM}↑↓${RST}${GRAY} naviguer${RST}  ${DIM}⏎${RST}${GRAY} ouvrir${RST}  ${GREEN}a${RST}${GRAY} ajouter${RST}  ${RED}s${RST}${GRAY} supprimer${RST}  ${DIM}d${RST}${GRAY} défaut${RST}  ${DIM}q${RST}${GRAY} quitter${RST}"
+  )
+
+  printf '%s\e[K\n' "${FRAME[@]}"
+  printf '\e[J'
 }
 
 # --- Mode interactif (prompt pour les actions) ---
@@ -392,6 +452,7 @@ printf '\e[?1049h'
 
 build_items
 selected=$DEFAULT_CHOICE
+scroll_top=1
 fix_selected
 
 while true; do
